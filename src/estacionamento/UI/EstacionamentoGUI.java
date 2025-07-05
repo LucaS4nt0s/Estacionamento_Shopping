@@ -29,6 +29,8 @@ public class EstacionamentoGUI extends JFrame {
     private JLabel lblFilaEspera;
     private JTextArea filaEsperaArea;
     private JLabel lblCarrosDesistiram;
+    private JLabel lblCarrosQueEntraram;
+    private JLabel lblCarrosSairam;
 
     // NOVO: Painel para a visualização das vagas
     private JPanel estacionamentoPanel;
@@ -181,17 +183,30 @@ public class EstacionamentoGUI extends JFrame {
         statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
 
         lblFilaEspera = new JLabel("Carros na Fila de Espera: --", SwingConstants.CENTER);
-        lblFilaEspera.setAlignmentX(Component.CENTER_ALIGNMENT); // Centraliza o texto
+        lblFilaEspera.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
         lblFilaEspera.setFont(new Font("Arial", Font.BOLD, 14));
         statusPanel.add(lblFilaEspera);
         statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
 
         lblCarrosDesistiram = new JLabel("Carros que Desistiram: --", SwingConstants.CENTER); // Novo Label
-        lblCarrosDesistiram.setAlignmentX(Component.CENTER_ALIGNMENT); // Centraliza o texto
+        lblCarrosDesistiram.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
         lblCarrosDesistiram.setFont(new Font("Arial", Font.BOLD, 14));
         statusPanel.add(lblCarrosDesistiram);
         statusPanel.add(Box.createVerticalStrut(10)); // Mais espaçamento
 
+        lblCarrosQueEntraram = new JLabel("Carros que Entraram: --", SwingConstants.CENTER); // Novo Label
+        lblCarrosQueEntraram.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
+        lblCarrosQueEntraram.setFont(new Font("Arial", Font.BOLD, 14));
+        statusPanel.add(lblCarrosQueEntraram);
+        statusPanel.add(Box.createVerticalStrut(10)); // Mais espaçamento
+
+        lblCarrosSairam = new JLabel("Carros que Sairam: --", SwingConstants.CENTER); // Novo Label
+        lblCarrosSairam.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
+        lblCarrosSairam.setFont(new Font("Arial", Font.BOLD, 14));
+        statusPanel.add(lblCarrosSairam);
+        statusPanel.add(Box.createVerticalStrut(10)); // Mais espaçamento
+
+        // Área de texto para a fila de espera detalhada
         filaEsperaArea = new JTextArea(5, 20);
         filaEsperaArea.setEditable(false);
         JScrollPane filaScrollPane = new JScrollPane(filaEsperaArea);
@@ -255,6 +270,8 @@ public class EstacionamentoGUI extends JFrame {
             logAllEvents("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
                     numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
 
+
+
             // NOVO: Inicializar os VagaPanels
             estacionamentoPanel.removeAll(); // Limpa painéis anteriores
             mapaVagaParaPanel.clear(); // Limpa o mapa
@@ -312,17 +329,17 @@ public class EstacionamentoGUI extends JFrame {
             Random random = new Random();
 
             for (int i = 0; i < carrosGerais; i++) {
-                Carro carro = new Carro("CAR-" + System.nanoTime(), TipoVaga.GERAL, estacionamento);
+                Carro carro = new Carro("CARRO-" + (i + 1), TipoVaga.GERAL, estacionamento, this);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
             for (int i = 0; i < carrosIdosos; i++) {
-                Carro carro = new Carro("IDOSO-" + System.nanoTime(), TipoVaga.IDOSO, estacionamento);
+                Carro carro = new Carro("IDOSO-" + (i + 1), TipoVaga.IDOSO, estacionamento, this);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
             for (int i = 0; i < carrosPCD; i++) {
-                Carro carro = new Carro("PCD-" + System.nanoTime(), TipoVaga.PCD, estacionamento);
+                Carro carro = new Carro("PCD-" + (i + 1), TipoVaga.PCD, estacionamento, this);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
@@ -412,6 +429,10 @@ public class EstacionamentoGUI extends JFrame {
                                 }
                                 filaEsperaArea.setText(filaDetalhada.toString());
                             }
+
+                            lblCarrosDesistiram.setText("Carros que Desistiram: " + estacionamento.getCarrosDesistiram());
+                            lblCarrosQueEntraram.setText("Carros que Entraram: " + estacionamento.getCarrosQueEntraram());
+                            lblCarrosSairam.setText("Carros que Sairam: " + estacionamento.getCarrosSairam());
                         }
                     });
                     TimeUnit.SECONDS.sleep(1);

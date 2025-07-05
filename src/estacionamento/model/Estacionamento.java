@@ -9,6 +9,7 @@ import java.util.concurrent.Semaphore;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 
 public class Estacionamento {
@@ -21,9 +22,9 @@ public class Estacionamento {
     private final List<Vagas> vagasPCD;
     private final Queue<Carro> filaDeEspera;
 
-    private int carrosSairam;
-    private int carrosDesistiram;
-    private int carrosQueEntraram; // Carros que realmente entraram no estacionamento
+    private AtomicInteger carrosSairam;
+    private AtomicInteger carrosDesistiram;
+    private AtomicInteger carrosQueEntraram; // Carros que realmente entraram no estacionamento
 
     private EstacionamentoGUI guiLogger;
 
@@ -48,14 +49,14 @@ public class Estacionamento {
             vagasPCD.add(new Vagas("P" + i, TipoVaga.PCD));
         }
 
-        this.carrosSairam = 0;
-        this.carrosDesistiram = 0;
-        this.carrosQueEntraram = 0;
+        this.carrosQueEntraram = new AtomicInteger(0);
+        this.carrosSairam = new AtomicInteger(0);
+        this.carrosDesistiram = new AtomicInteger(0);
         this.guiLogger = guiLogger;
     }
 
     public Vagas entrar(Carro carro) throws InterruptedException {
-        System.out.println("Carro " + carro.getPlaca() + " (" + carro.getTipo() + ") tentando entrar.");
+        guiLogger.logAllEvents("Carro " + carro.getPlaca() + " (" + carro.getTipo() + ") tentando entrar.");
 
         Vagas vagaEncontrada = null;
         boolean adquiriuPermissao = false;
@@ -113,7 +114,7 @@ public class Estacionamento {
                 synchronized (filaDeEspera) {
                     if (!filaDeEspera.contains(carro)) {
                         filaDeEspera.add(carro);
-                        System.out.println("Carro " + carro.getPlaca() + " entrou na fila de espera.");
+                        guiLogger.logAllEvents("Carro " + carro.getPlaca() + " entrou na fila de espera.");
                     }
                 }
                 // O carro espera um pouco antes da próxima tentativa no loop
@@ -127,12 +128,12 @@ public class Estacionamento {
             synchronized (filaDeEspera) {
                 filaDeEspera.remove(carro);
             }
-            carrosQueEntraram++; // Carro realmente entrou
+            carrosQueEntraram.incrementAndGet();
             return vagaEncontrada; // Carro conseguiu estacionar
         } else {
-            System.out.println("Carro " + carro.getPlaca() + " desistiu de estacionar após " +
+            guiLogger.logAllEvents("Carro " + carro.getPlaca() + " desistiu de estacionar após " +
                     (System.currentTimeMillis() - inicioTentativa) / 1000.0 + " segundos.");
-            carrosDesistiram++;
+            carrosDesistiram.incrementAndGet();
             synchronized (filaDeEspera) {
                 filaDeEspera.remove(carro); // Remove da fila se desistiu
             }
@@ -176,16 +177,16 @@ public class Estacionamento {
         } else {
             System.err.println("Erro: Vaga " + vaga.getId() + " não encontrada em nenhuma lista de vagas.");
         }
-        carrosSairam++; // Incrementa a estatística
+        carrosSairam.incrementAndGet(); // Incrementa a estatística
     }
 
 
     public List<Vagas> getVagasGerais() { return vagasGerais; }
     public List<Vagas> getVagasIdosos() { return vagasIdosos; }
     public List<Vagas> getVagasPCD() { return vagasPCD; }
-    public int getCarrosSairam() { return carrosSairam; }
-    public int getCarrosDesistiram() { return carrosDesistiram; }
-    public int getCarrosQueEntraram() { return carrosQueEntraram; }
+    public int getCarrosSairam() { return carrosSairam.get(); }
+    public int getCarrosDesistiram() { return carrosDesistiram.get(); }
+    public int getCarrosQueEntraram() { return carrosQueEntraram.get(); }
 
     public Queue<Carro> getFilaDeEspera() {
         return filaDeEspera;
