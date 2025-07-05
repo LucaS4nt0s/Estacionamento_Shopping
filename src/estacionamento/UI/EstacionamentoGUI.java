@@ -24,9 +24,11 @@ public class EstacionamentoGUI extends JFrame {
     private JSpinner txtVagasGerais, txtVagasIdosos, txtVagasPCD;
     private JSpinner txtCarrosGerais, txtCarrosIdosos, txtCarrosPCD;
     private JButton btnIniciar, btnPararExecucao;
-    private JTextArea logArea;
+    private JTextArea mainEventsLogArea;
+    private JTextArea allEventsLogArea;
     private JLabel lblFilaEspera;
-    private JTextArea filaEsperaArea; // Referência direta para a área de texto da fila de espera detalhada
+    private JTextArea filaEsperaArea;
+    private JLabel lblCarrosDesistiram;
 
     // NOVO: Painel para a visualização das vagas
     private JPanel estacionamentoPanel;
@@ -142,11 +144,26 @@ public class EstacionamentoGUI extends JFrame {
         add(controlPanel, BorderLayout.SOUTH); // Colocar botões abaixo do log
 
         // --- Área de Log (lado esquerdo) ---
-        logArea = new JTextArea(15, 30); // Ajustar tamanho
-        logArea.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(logArea);
-        scrollPane.setBorder(BorderFactory.createTitledBorder("Log da Simulação"));
-        add(scrollPane, BorderLayout.WEST);
+        JPanel logContainerPanel = new JPanel(new GridLayout(2, 1, 5, 5)); // Layout para 2 logs
+        logContainerPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        mainEventsLogArea = new JTextArea(10, 30); // Eventos principais
+        mainEventsLogArea.setEditable(false);
+        JScrollPane mainScrollPane = new JScrollPane(mainEventsLogArea);
+        mainScrollPane.setBorder(BorderFactory.createTitledBorder("Eventos Principais"));
+        mainScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        mainScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        logContainerPanel.add(mainScrollPane);
+
+        allEventsLogArea = new JTextArea(10, 30); // Todos os eventos
+        allEventsLogArea.setEditable(false);
+        JScrollPane allScrollPane = new JScrollPane(allEventsLogArea);
+        allScrollPane.setBorder(BorderFactory.createTitledBorder("Todos os Eventos"));
+        allScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        allScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        logContainerPanel.add(allScrollPane);
+
+        add(logContainerPanel, BorderLayout.WEST);
 
         // --- Painel de Visualização do Estacionamento (central) ---
         estacionamentoPanel = new JPanel();
@@ -158,20 +175,30 @@ public class EstacionamentoGUI extends JFrame {
         add(vagasScrollPane, BorderLayout.CENTER);
 
         // --- Painel de Status (lado direito) ---
-        JPanel statusPanel = new JPanel(new BorderLayout()); // Usar BorderLayout para o status e fila
+        JPanel statusPanel = new JPanel();
+        statusPanel.setLayout(new BoxLayout(statusPanel, BoxLayout.Y_AXIS)); // Para empilhar labels verticalmente
         statusPanel.setBorder(BorderFactory.createTitledBorder("Status Geral"));
-        lblFilaEspera = new JLabel("Carros na Fila de Espera: --", SwingConstants.CENTER);
-        lblFilaEspera.setFont(new Font("Arial", Font.BOLD, 14));
-        statusPanel.add(lblFilaEspera, BorderLayout.NORTH); // Fila no topo do painel de status
+        statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
 
-        // Uma área para exibir a fila de espera detalhada
-        filaEsperaArea = new JTextArea(5, 20); // Referência direta
+        lblFilaEspera = new JLabel("Carros na Fila de Espera: --", SwingConstants.CENTER);
+        lblFilaEspera.setAlignmentX(Component.CENTER_ALIGNMENT); // Centraliza o texto
+        lblFilaEspera.setFont(new Font("Arial", Font.BOLD, 14));
+        statusPanel.add(lblFilaEspera);
+        statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
+
+        lblCarrosDesistiram = new JLabel("Carros que Desistiram: --", SwingConstants.CENTER); // Novo Label
+        lblCarrosDesistiram.setAlignmentX(Component.CENTER_ALIGNMENT); // Centraliza o texto
+        lblCarrosDesistiram.setFont(new Font("Arial", Font.BOLD, 14));
+        statusPanel.add(lblCarrosDesistiram);
+        statusPanel.add(Box.createVerticalStrut(10)); // Mais espaçamento
+
+        filaEsperaArea = new JTextArea(5, 20);
         filaEsperaArea.setEditable(false);
         JScrollPane filaScrollPane = new JScrollPane(filaEsperaArea);
         filaScrollPane.setBorder(BorderFactory.createTitledBorder("Fila de Espera Detalhada"));
-        statusPanel.add(filaScrollPane, BorderLayout.CENTER);
+        statusPanel.add(filaScrollPane);
 
-        add(statusPanel, BorderLayout.EAST); // Painel de status à direita
+        add(statusPanel, BorderLayout.EAST);
 
         // --- Métodos de Controle da Simulação ---
         btnIniciar.setEnabled(true);
@@ -201,14 +228,31 @@ public class EstacionamentoGUI extends JFrame {
         setVisible(true);
     }
 
+    // --- Métodos de Log (PÚBLICOS para serem chamados por Estacionamento e Carro) ---
+    public void logMainEvent(String message) {
+        SwingUtilities.invokeLater(() -> {
+            mainEventsLogArea.append(message + "\n");
+            mainEventsLogArea.setCaretPosition(mainEventsLogArea.getDocument().getLength()); // Rola para o final
+        });
+    }
+
+    public void logAllEvents(String message) {
+        SwingUtilities.invokeLater(() -> {
+            allEventsLogArea.append(message + "\n");
+            allEventsLogArea.setCaretPosition(allEventsLogArea.getDocument().getLength()); // Rola para o final
+        });
+    }
+
     // --- Iniciar a simulação ---
     private void iniciarSimulacao(ActionEvent e) {
             int numVagasGerais = (Integer) txtVagasGerais.getValue();
             int numVagasIdosos = (Integer) txtVagasIdosos.getValue();
             int numVagasPCD = (Integer) txtVagasPCD.getValue();
 
-            estacionamento = new Estacionamento(numVagasGerais, numVagasIdosos, numVagasPCD);
-            log("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
+            estacionamento = new Estacionamento(numVagasGerais, numVagasIdosos, numVagasPCD, this);
+            logMainEvent("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
+                    numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
+            logAllEvents("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
                     numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
 
             // NOVO: Inicializar os VagaPanels
@@ -334,7 +378,7 @@ public class EstacionamentoGUI extends JFrame {
     }
 
     private void log(String message) {
-        SwingUtilities.invokeLater(() -> logArea.append(message + "\n"));
+        SwingUtilities.invokeLater(() -> mainEventsLogArea.append(message + "\n"));
     }
 
     // --- Monitoramento da UI (atualizado para VagaPanels) ---

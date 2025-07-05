@@ -1,5 +1,6 @@
 package estacionamento.model;
 
+import estacionamento.UI.EstacionamentoGUI;
 import estacionamento.util.TipoVaga;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,10 +25,9 @@ public class Estacionamento {
     private int carrosDesistiram;
     private int carrosQueEntraram; // Carros que realmente entraram no estacionamento
 
-    // NOVO: Flag de pausa para ser acessada pelas threads de carro
-    private volatile boolean simulacaoPausada = false;
+    private EstacionamentoGUI guiLogger;
 
-    public Estacionamento(int numVagasGerais, int numVagasIdosos, int numVagasPCD) {
+    public Estacionamento(int numVagasGerais, int numVagasIdosos, int numVagasPCD, EstacionamentoGUI guiLogger) {
         this.semaforoGeral = new Semaphore(numVagasGerais);
         this.semaforoIdoso = new Semaphore(numVagasIdosos);
         this.semaforoPCD = new Semaphore(numVagasPCD);
@@ -51,6 +51,7 @@ public class Estacionamento {
         this.carrosSairam = 0;
         this.carrosDesistiram = 0;
         this.carrosQueEntraram = 0;
+        this.guiLogger = guiLogger;
     }
 
     public Vagas entrar(Carro carro) throws InterruptedException {
@@ -194,13 +195,4 @@ public class Estacionamento {
     public Semaphore getSemaforoGeral() { return semaforoGeral; }
     public Semaphore getSemaforoIdoso() { return semaforoIdoso; }
     public Semaphore getSemaforoPCD() { return semaforoPCD; }
-
-    // Flag de pausa para ser acessada pelas threads de carro
-    public void setSimulacaoPausada(boolean pausada) {
-        this.simulacaoPausada = pausada;
-    }
-
-    public boolean isSimulacaoPausada() {
-        return simulacaoPausada;
-    }
 }
