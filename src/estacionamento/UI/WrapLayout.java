@@ -24,7 +24,14 @@ public class WrapLayout extends FlowLayout {
      */
     @Override
     public Dimension preferredLayoutSize(Container target) {
-        return layoutSize(target, true);
+        // Use the current width of the target if available, otherwise a very large number.
+        // This ensures preferredLayoutSize doesn't force wrapping prematurely for ideal sizing,
+        // and actual wrapping is handled by layoutContainer using the actual width.
+        int targetWidth = target.getWidth();
+        if (targetWidth == 0) {
+            targetWidth = Integer.MAX_VALUE; // If width is not yet determined, assume infinite width
+        }
+        return layoutSize(target, true, targetWidth);
     }
 
     /**
@@ -34,7 +41,8 @@ public class WrapLayout extends FlowLayout {
      */
     @Override
     public Dimension minimumLayoutSize(Container target) {
-        Dimension minimum = layoutSize(target, false);
+        // For minimum size, we still consider the current width as a hint, but it's often more about component minimums.
+        Dimension minimum = layoutSize(target, false, target.getWidth());
         minimum.width -= (getHgap() + 1); // Subtrai o espaçamento horizontal para um ajuste fino
         return minimum;
     }
@@ -43,26 +51,18 @@ public class WrapLayout extends FlowLayout {
      * Calcula o tamanho do layout.
      * @param target O contêiner.
      * @param preferred True para o tamanho preferido, false para o tamanho mínimo.
+     * @param targetWidth The width to use for calculations. This represents the available width for wrapping.
      * @return O tamanho calculado.
      */
-    private Dimension layoutSize(Container target, boolean preferred) {
+    private Dimension layoutSize(Container target, boolean preferred, int targetWidth) {
         synchronized (target.getTreeLock()) {
-            int targetWidth = target.getSize().width;
-
-            // Quando a janela está sendo criada, o tamanho do target pode ser 0.
-            // Para evitar divisões por zero ou layouts estranhos, use um valor padrão.
-            if (targetWidth == 0)
-                targetWidth = Integer.MAX_VALUE;
-
-            int hgap = getHgap();
-            int vgap = getVgap();
             Insets insets = target.getInsets();
-            int horizontalInsetsAndGap = insets.left + insets.right + (hgap * 2);
-            int verticalInsetsAndGap = insets.top + insets.bottom + (vgap * 2);
+            int horizontalInsetsAndGap = insets.left + insets.right + (getHgap() * 2);
+            int verticalInsetsAndGap = insets.top + insets.bottom + (getVgap() * 2);
 
             int maxWidth = targetWidth - horizontalInsetsAndGap;
+            if (maxWidth < 0) maxWidth = 0; // Ensure maxWidth is not negative
 
-            // Calcular o tamanho dos componentes
             Dimension dim = new Dimension(0, 0);
             int rowWidth = 0;
             int rowHeight = 0;
@@ -74,15 +74,17 @@ public class WrapLayout extends FlowLayout {
                 if (m.isVisible()) {
                     Dimension d = preferred ? m.getPreferredSize() : m.getMinimumSize();
 
-                    if (rowWidth + d.width + hgap > maxWidth) {
-                        // Nova linha
+                    // Check if adding the current component would exceed the maxWidth for the current row.
+                    // Also check if rowWidth is greater than 0 to avoid wrapping an empty first row.
+                    if (rowWidth + d.width + getHgap() > maxWidth && rowWidth > 0) {
+                        // Start a new line
                         dim.width = Math.max(dim.width, rowWidth);
-                        dim.height += rowHeight + vgap;
-                        rowWidth = d.width + hgap;
+                        dim.height += rowHeight + getVgap();
+                        rowWidth = d.width + getHgap();
                         rowHeight = d.height;
                     } else {
-                        // Mesma linha
-                        rowWidth += d.width + hgap;
+                        // Continue on the same line
+                        rowWidth += d.width + getHgap();
                         rowHeight = Math.max(rowHeight, d.height);
                     }
                 }
@@ -92,6 +94,41 @@ public class WrapLayout extends FlowLayout {
             dim.height += rowHeight;
 
             return new Dimension(dim.width + horizontalInsetsAndGap, dim.height + verticalInsetsAndGap);
+        }
+    }
+
+    /**
+     * Posiciona os componentes dentro do contêiner.
+     * This method is crucial for the actual visual wrapping behavior.
+     */
+    @Override
+    public void layoutContainer(Container target) {
+        Insets insets = target.getInsets();
+        // Calculate the actual available width for layout
+        int maxWidth = target.getWidth() - (insets.left + insets.right + getHgap() * 2);
+        if (maxWidth < 0) maxWidth = 0; // Ensure maxWidth is not negative
+
+        int x = insets.left + getHgap();
+        int y = insets.top + getVgap();
+        int rowHeight = 0;
+
+        for (int i = 0; i < target.getComponentCount(); i++) {
+            Component m = target.getComponent(i);
+            if (m.isVisible()) {
+                Dimension d = m.getPreferredSize();
+
+                // Check if the component needs to wrap to a new line
+                if (x + d.width + getHgap() > maxWidth && x > (insets.left + getHgap())) {
+                    x = insets.left + getHgap(); // Reset x to the start of the new line
+                    y += rowHeight + getVgap(); // Move y down by the height of the previous row
+                    rowHeight = 0; // Reset row height for the new row
+                }
+
+                // Set component bounds (position and size)
+                m.setBounds(x, y, d.width, d.height);
+                x += d.width + getHgap(); // Move x for the next component
+                rowHeight = Math.max(rowHeight, d.height); // Update the maximum height in the current row
+            }
         }
     }
 }

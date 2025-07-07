@@ -14,6 +14,7 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.Queue;
 
 public class EstacionamentoGUI extends JFrame {
 
@@ -26,8 +27,10 @@ public class EstacionamentoGUI extends JFrame {
     private JButton btnIniciar, btnPararExecucao;
     private JTextArea mainEventsLogArea;
     private JTextArea allEventsLogArea;
-    private JLabel lblFilaEspera;
-    private JTextArea filaEsperaArea;
+
+    private JLabel lblFilaGeral, lblFilaIdoso, lblFilaPCD;
+    private JTextArea filaGeralArea, filaIdosoArea, filaPCDArea;
+
     private JLabel lblCarrosDesistiram;
     private JLabel lblCarrosQueEntraram;
     private JLabel lblCarrosSairam;
@@ -35,9 +38,11 @@ public class EstacionamentoGUI extends JFrame {
     // NOVO: Painel para a visualização das vagas
     private JPanel estacionamentoPanel;
     // Mapeamento de Vaga do modelo para seu VagaPanel visual
-    private Map<Vagas, VagaPanel> mapaVagaParaPanel;
+    private Map<Vagas, VagaPanel> vagaPanels;
 
-    // --- Construtor do PainelControle (atualizado) ---
+    private volatile boolean simulacaoAtiva = false; // Flag para controlar o ciclo de vida das threads
+
+    // --- Construtor do PainelControle ---
     public EstacionamentoGUI() {
         super("Controle de Estacionamento Inteligente");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -45,8 +50,6 @@ public class EstacionamentoGUI extends JFrame {
         setLayout(new BorderLayout());
         setLocationRelativeTo(null); // Centraliza a janela na tela
         setResizable(true); // Permite redimensionar a janela
-
-        mapaVagaParaPanel = new HashMap<>();
 
         // --- Painel de Configuração de Vagas e Carros (topPanel) ---
         JPanel configPanel = new JPanel(new GridLayout(2, 1, 2, 10)); // Com espaçamento
@@ -182,11 +185,27 @@ public class EstacionamentoGUI extends JFrame {
         statusPanel.setBorder(BorderFactory.createTitledBorder("Status Geral"));
         statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
 
-        lblFilaEspera = new JLabel("Carros na Fila de Espera: --", SwingConstants.CENTER);
-        lblFilaEspera.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
-        lblFilaEspera.setFont(new Font("Arial", Font.BOLD, 14));
-        statusPanel.add(lblFilaEspera);
-        statusPanel.add(Box.createVerticalStrut(5)); // Espaçamento
+        JPanel filasPanel = new JPanel(new GridLayout(3, 2)); // 3 filas, Label + TextArea
+        filasPanel.setBorder(BorderFactory.createTitledBorder("Filas de Espera"));
+
+        lblFilaGeral = new JLabel("Fila Geral: 0");
+        filaGeralArea = new JTextArea(3, 20); // Menor, pois agora são 3
+        filaGeralArea.setEditable(false);
+        filasPanel.add(lblFilaGeral);
+        filasPanel.add(new JScrollPane(filaGeralArea));
+
+        lblFilaIdoso = new JLabel("Fila Idoso: 0");
+        filaIdosoArea = new JTextArea(3, 20);
+        filaIdosoArea.setEditable(false);
+        filasPanel.add(lblFilaIdoso);
+        filasPanel.add(new JScrollPane(filaIdosoArea));
+
+        lblFilaPCD = new JLabel("Fila PCD: 0");
+        filaPCDArea = new JTextArea(3, 20);
+        filaPCDArea.setEditable(false);
+        filasPanel.add(lblFilaPCD);
+        filasPanel.add(new JScrollPane(filaPCDArea));
+        statusPanel.add(filasPanel);
 
         lblCarrosDesistiram = new JLabel("Carros que Desistiram: --", SwingConstants.CENTER); // Novo Label
         lblCarrosDesistiram.setAlignmentX(Component.LEFT_ALIGNMENT); // Centraliza o texto
@@ -205,13 +224,6 @@ public class EstacionamentoGUI extends JFrame {
         lblCarrosSairam.setFont(new Font("Arial", Font.BOLD, 14));
         statusPanel.add(lblCarrosSairam);
         statusPanel.add(Box.createVerticalStrut(10)); // Mais espaçamento
-
-        // Área de texto para a fila de espera detalhada
-        filaEsperaArea = new JTextArea(5, 20);
-        filaEsperaArea.setEditable(false);
-        JScrollPane filaScrollPane = new JScrollPane(filaEsperaArea);
-        filaScrollPane.setBorder(BorderFactory.createTitledBorder("Fila de Espera Detalhada"));
-        statusPanel.add(filaScrollPane);
 
         add(statusPanel, BorderLayout.EAST);
 
@@ -260,55 +272,66 @@ public class EstacionamentoGUI extends JFrame {
 
     // --- Iniciar a simulação ---
     private void iniciarSimulacao(ActionEvent e) {
-            int numVagasGerais = (Integer) txtVagasGerais.getValue();
-            int numVagasIdosos = (Integer) txtVagasIdosos.getValue();
-            int numVagasPCD = (Integer) txtVagasPCD.getValue();
 
-            estacionamento = new Estacionamento(numVagasGerais, numVagasIdosos, numVagasPCD, this);
-            logMainEvent("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
-                    numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
-            logAllEvents("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
-                    numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
+        if (simulacaoAtiva) {
+            JOptionPane.showMessageDialog(this, "A simulação já está em andamento.", "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
+        int numVagasGerais = (Integer) txtVagasGerais.getValue();
+        int numVagasIdosos = (Integer) txtVagasIdosos.getValue();
+        int numVagasPCD = (Integer) txtVagasPCD.getValue();
 
+        estacionamento = new Estacionamento(numVagasGerais, numVagasIdosos, numVagasPCD, this);
+        logMainEvent("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
+                numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
+        logAllEvents("Simulação iniciada com " + numVagasGerais + " vagas gerais, " +
+                numVagasIdosos + " de idosos e " + numVagasPCD + " de PCD.");
+        vagaPanels = new HashMap<>(); // Inicializa o mapa de VagaPanels
 
-            // NOVO: Inicializar os VagaPanels
-            estacionamentoPanel.removeAll(); // Limpa painéis anteriores
-            mapaVagaParaPanel.clear(); // Limpa o mapa
+        // Configura o painel de visualização das vagas
+        estacionamentoPanel.setLayout(new WrapLayout(FlowLayout.LEFT, 10, 10));
 
-            // Adicionar Vagas Gerais
-            for (Vagas vaga : estacionamento.getVagasGerais()) {
-                VagaPanel vagaPanel = new VagaPanel(vaga);
-                mapaVagaParaPanel.put(vaga, vagaPanel);
-                estacionamentoPanel.add(vagaPanel);
-            }
-            // Adicionar Vagas Idosos
-            for (Vagas vaga : estacionamento.getVagasIdosos()) {
-                VagaPanel vagaPanel = new VagaPanel(vaga);
-                mapaVagaParaPanel.put(vaga, vagaPanel);
-                estacionamentoPanel.add(vagaPanel);
-            }
-            // Adicionar Vagas PCD
-            for (Vagas vaga : estacionamento.getVagasPCD()) {
-                VagaPanel vagaPanel = new VagaPanel(vaga);
-                mapaVagaParaPanel.put(vaga, vagaPanel);
-                estacionamentoPanel.add(vagaPanel);
-            }
-            estacionamentoPanel.revalidate(); // Revalida o layout para exibir as novas vagas
-            estacionamentoPanel.repaint(); // Repinta
+        // Adiciona VagaPanels para vagas gerais
+        for (Vagas vaga : estacionamento.getVagasGerais()) {
+            VagaPanel panel = new VagaPanel(vaga);
+            vagaPanels.put(vaga, panel);
+            estacionamentoPanel.add(panel);
+        }
+        // Adiciona VagaPanels para vagas idosos
+        for (Vagas vaga : estacionamento.getVagasIdosos()) {
+            VagaPanel panel = new VagaPanel(vaga);
+            vagaPanels.put(vaga, panel);
+            estacionamentoPanel.add(panel);
+        }
+        // Adiciona VagaPanels para vagas PCD
+        for (Vagas vaga : estacionamento.getVagasPCD()) {
+            VagaPanel panel = new VagaPanel(vaga);
+            vagaPanels.put(vaga, panel);
+            estacionamentoPanel.add(panel);
+        }
+        estacionamentoPanel.revalidate();
+        estacionamentoPanel.repaint();
 
-            // Resetar executor (não precisamos de threadsDosCarros agora)
-            if (executorService != null && !executorService.isShutdown()) {
-                executorService.shutdownNow();
-            }
-            executorService = Executors.newCachedThreadPool();
-            adicionarNovosCarros(null); // Adiciona carros iniciais
+        simulacaoAtiva = true;
+        btnIniciar.setEnabled(false);
+        btnPararExecucao.setEnabled(true);
 
-            btnIniciar.setEnabled(false);
-            btnPararExecucao.setEnabled(true);
+        // Iniciar monitoramento da UI (em nova Thread)
+        iniciarMonitoramentoUI();
 
-            // Iniciar o monitoramento da UI (agora também atualiza os VagaPanels)
-            iniciarMonitoramentoUI();
+        // Resetar executor (não precisamos de threadsDosCarros agora)
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdownNow();
+        }
+        executorService = Executors.newCachedThreadPool();
+        adicionarNovosCarros(null); // Adiciona carros iniciais
+
+        btnIniciar.setEnabled(false);
+        btnPararExecucao.setEnabled(true);
+
+        // Iniciar o monitoramento da UI (agora também atualiza os VagaPanels)
+        iniciarMonitoramentoUI();
     }
 
     private void adicionarNovosCarros(ActionEvent e) {
@@ -355,6 +378,7 @@ public class EstacionamentoGUI extends JFrame {
     }
 
     private void encerrarSimulacao() {
+        simulacaoAtiva = false; // Define a flag como false primeiro
         if (executorService != null) {
             executorService.shutdownNow();
             try {
@@ -367,31 +391,53 @@ public class EstacionamentoGUI extends JFrame {
         }
         if (estacionamento != null) {
             // Se houver carros na fila de espera que desistiram ao encerrar
-            synchronized (estacionamento.getFilaDeEspera()) {
-                int desistiramAoEncerrar = estacionamento.getFilaDeEspera().size();
+            synchronized (estacionamento.getFilaIdoso()) {
+                int desistiramAoEncerrar = estacionamento.getFilaIdoso().size();
                 // Assumindo que Estacionamento possui um método para incrementar carros desistiram
                 // Ou você pode apenas logar a quantidade aqui
                 // for (Carro c : estacionamento.getFilaDeEspera()) { estacionamento.incrementCarrosDesistiram(); }
-                estacionamento.getFilaDeEspera().clear();
+                estacionamento.getFilaIdoso().clear();
                 if (desistiramAoEncerrar > 0) {
-                    log("Total de " + desistiramAoEncerrar + " carros na fila desistiram ao encerrar a simulação.");
+                    log("Total de " + desistiramAoEncerrar + " carros Idosos na fila desistiram ao encerrar a simulação.");
                 }
             }
+
+            synchronized (estacionamento.getFilaPCD()) {
+                int desistiramAoEncerrar = estacionamento.getFilaPCD().size();
+                estacionamento.getFilaPCD().clear();
+                if (desistiramAoEncerrar > 0) {
+                    log("Total de " + desistiramAoEncerrar + " carros PCD na fila desistiram ao encerrar a simulação.");
+                }
+            }
+
+            synchronized (estacionamento.getFilaGeral()) {
+                int desistiramAoEncerrar = estacionamento.getFilaGeral().size();
+                estacionamento.getFilaGeral().clear();
+                if (desistiramAoEncerrar > 0) {
+                    log("Total de " + desistiramAoEncerrar + " carros Gerais na fila desistiram ao encerrar a simulação.");
+                }
+            }
+
         }
         estacionamento = null;
 
         log("Simulação finalizada.");
 
         estacionamentoPanel.removeAll();
-        mapaVagaParaPanel.clear();
+        vagaPanels.clear();
         estacionamentoPanel.revalidate();
         estacionamentoPanel.repaint();
 
         btnIniciar.setEnabled(true);
         btnPararExecucao.setEnabled(false);
 
-        lblFilaEspera.setText("Carros na Fila de Espera: --");
-        filaEsperaArea.setText("");
+        lblFilaGeral.setText("Fila Geral: --");
+        filaGeralArea.setText("");
+        lblFilaIdoso.setText("Fila Idoso: --"); // Redefine os rótulos de fila específicos
+        filaIdosoArea.setText("");
+        lblFilaPCD.setText("Fila PCD: --");
+        filaPCDArea.setText("");
+
     }
 
     private void log(String message) {
@@ -406,28 +452,44 @@ public class EstacionamentoGUI extends JFrame {
                     SwingUtilities.invokeLater(() -> {
                         if (estacionamento != null) {
                             for (Vagas vaga : estacionamento.getVagasGerais()) {
-                                if (mapaVagaParaPanel.containsKey(vaga)) {
-                                    mapaVagaParaPanel.get(vaga).atualizarEstado();
+                                if (vagaPanels.containsKey(vaga)) {
+                                    vagaPanels.get(vaga).atualizarEstado();
                                 }
                             }
                             for (Vagas vaga : estacionamento.getVagasIdosos()) {
-                                if (mapaVagaParaPanel.containsKey(vaga)) {
-                                    mapaVagaParaPanel.get(vaga).atualizarEstado();
+                                if (vagaPanels.containsKey(vaga)) {
+                                    vagaPanels.get(vaga).atualizarEstado();
                                 }
                             }
                             for (Vagas vaga : estacionamento.getVagasPCD()) {
-                                if (mapaVagaParaPanel.containsKey(vaga)) {
-                                    mapaVagaParaPanel.get(vaga).atualizarEstado();
+                                if (vagaPanels.containsKey(vaga)) {
+                                    vagaPanels.get(vaga).atualizarEstado();
                                 }
                             }
 
-                            synchronized (estacionamento.getFilaDeEspera()) {
-                                lblFilaEspera.setText("Carros na Fila de Espera: " + estacionamento.getFilaDeEspera().size());
+                            synchronized (estacionamento.getFilaIdoso()) {
+                                lblFilaIdoso.setText("Carros na Fila de Espera: " + estacionamento.getFilaIdoso().size());
                                 StringBuilder filaDetalhada = new StringBuilder();
-                                for (Carro c : estacionamento.getFilaDeEspera()) {
+                                for (Carro c : estacionamento.getFilaIdoso()) {
                                     filaDetalhada.append(c.getPlaca()).append(" (").append(c.getTipo().name().charAt(0)).append(")\n");
                                 }
-                                filaEsperaArea.setText(filaDetalhada.toString());
+                                filaIdosoArea.setText(filaDetalhada.toString());
+                            }
+                            synchronized (estacionamento.getFilaPCD()) {
+                                lblFilaPCD.setText("Carros na Fila de Espera: " + estacionamento.getFilaPCD().size());
+                                StringBuilder filaDetalhada = new StringBuilder();
+                                for (Carro c : estacionamento.getFilaPCD()) {
+                                    filaDetalhada.append(c.getPlaca()).append(" (").append(c.getTipo().name().charAt(0)).append(")\n");
+                                }
+                                filaPCDArea.setText(filaDetalhada.toString());
+                            }
+                            synchronized (estacionamento.getFilaGeral()) {
+                                lblFilaGeral.setText("Carros na Fila de Espera: " + estacionamento.getFilaGeral().size());
+                                StringBuilder filaDetalhada = new StringBuilder();
+                                for (Carro c : estacionamento.getFilaGeral()) {
+                                    filaDetalhada.append(c.getPlaca()).append(" (").append(c.getTipo().name().charAt(0)).append(")\n");
+                                }
+                                filaGeralArea.setText(filaDetalhada.toString());
                             }
 
                             lblCarrosDesistiram.setText("Carros que Desistiram: " + estacionamento.getCarrosDesistiram());

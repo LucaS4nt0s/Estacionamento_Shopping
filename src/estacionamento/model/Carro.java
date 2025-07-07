@@ -45,7 +45,7 @@ public class Carro implements Runnable {
 
                     // 2. Simular tempo estacionado
                     Random random = new Random();
-                    long tempoEstacionadoMs = 2000 + random.nextInt(8000); // Entre 2 a 10 segundos
+                    long tempoEstacionadoMs = 10000 + random.nextInt(20000); // Entre 10 a 20 segundos
                     guiLogger.logAllEvents("Carro " + placa + " ficará estacionado por " + (tempoEstacionadoMs / 1000.0) + " segundos.");
 
                     // --- Ponto de Verificação de Pausa durante o estacionamento ---

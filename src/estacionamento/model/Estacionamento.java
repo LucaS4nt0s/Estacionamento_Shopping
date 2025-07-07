@@ -20,7 +20,11 @@ public class Estacionamento {
     private final List<Vagas> vagasGerais;
     private final List<Vagas> vagasIdosos;
     private final List<Vagas> vagasPCD;
-    private final Queue<Carro> filaDeEspera;
+
+    // Múltiplas filas de espera, uma para cada tipo de carro para garantir que um carro geral não interfira na fila de idosos ou PCD.
+    private final Queue<Carro> filaGeral;
+    private final Queue<Carro> filaIdoso;
+    private final Queue<Carro> filaPCD;
 
     private AtomicInteger carrosSairam;
     private AtomicInteger carrosDesistiram;
@@ -32,7 +36,9 @@ public class Estacionamento {
         this.semaforoGeral = new Semaphore(numVagasGerais);
         this.semaforoIdoso = new Semaphore(numVagasIdosos);
         this.semaforoPCD = new Semaphore(numVagasPCD);
-        this.filaDeEspera = new LinkedList<>();
+        this.filaGeral = new LinkedList<>();
+        this.filaIdoso = new LinkedList<>();
+        this.filaPCD = new LinkedList<>();
 
         this.vagasGerais = new ArrayList<>();
         for (int i = 1; i <= numVagasGerais; i++) {
@@ -59,87 +65,127 @@ public class Estacionamento {
         guiLogger.logAllEvents("Carro " + carro.getPlaca() + " (" + carro.getTipo() + ") tentando entrar.");
 
         Vagas vagaEncontrada = null;
-        boolean adquiriuPermissao = false;
-
-        // Tempo máximo de espera total para um carro (10 segundos)
-        long tempoLimiteEsperaMs = 10 * 1000; // 10 segundos em milissegundos
+        long tempoLimiteEsperaMs = 60 * 1000; // 1 minuto em milissegundos
         long inicioTentativa = System.currentTimeMillis();
 
-        while (System.currentTimeMillis() - inicioTentativa < tempoLimiteEsperaMs && vagaEncontrada == null) {
-            adquiriuPermissao = false; // Resetar para cada tentativa
+        Queue<Carro> minhaFila;
+        Semaphore meuSemaforoEspecifico = null;
+        List<Vagas> minhasVagasEspecificas = null;
 
-            // 1. Tentar vaga do tipo específico do carro (PCD ou IDOSO) com timeout
-            if (carro.getTipo() == TipoVaga.PCD) {
-                if (semaforoPCD.tryAcquire(100, TimeUnit.MILLISECONDS)) { // Tenta por um curto período
-                    adquiriuPermissao = true;
-                    // Procura e ocupa a vaga se conseguiu a permissão
-                    synchronized (this) { // Sincroniza o acesso à lista de vagas
-                        vagaEncontrada = encontrarEocuparVagaLivre(vagasPCD, carro);
-                    }
-                    if (vagaEncontrada == null) { // Se não encontrou vaga física (erro de lógica ou corrida), libera a permissão
-                        semaforoPCD.release();
-                        adquiriuPermissao = false;
-                    }
-                }
-            } else if (carro.getTipo() == TipoVaga.IDOSO) {
-                if (semaforoIdoso.tryAcquire(100, TimeUnit.MILLISECONDS)) {
-                    adquiriuPermissao = true;
-                    synchronized (this) {
-                        vagaEncontrada = encontrarEocuparVagaLivre(vagasIdosos, carro);
-                    }
-                    if (vagaEncontrada == null) {
-                        semaforoIdoso.release();
-                        adquiriuPermissao = false;
-                    }
-                }
-            }
-
-            // 2. Se não conseguiu vaga específica, tentar vaga GERAL com timeout
-            if (vagaEncontrada == null) { // Apenas tenta geral se ainda não encontrou
-                if (semaforoGeral.tryAcquire(100, TimeUnit.MILLISECONDS)) {
-                    adquiriuPermissao = true;
-                    synchronized (this) {
-                        vagaEncontrada = encontrarEocuparVagaLivre(vagasGerais, carro);
-                    }
-                    if (vagaEncontrada == null) {
-                        semaforoGeral.release();
-                        adquiriuPermissao = false;
-                    }
-                }
-            }
-
-            // Se ainda não encontrou vaga, adiciona à fila de espera (se já não estiver)
-            // E faz o carro esperar um pouco antes de tentar de novo
-            if (vagaEncontrada == null) {
-                synchronized (filaDeEspera) {
-                    if (!filaDeEspera.contains(carro)) {
-                        filaDeEspera.add(carro);
-                        guiLogger.logAllEvents("Carro " + carro.getPlaca() + " entrou na fila de espera.");
-                    }
-                }
-                // O carro espera um pouco antes da próxima tentativa no loop
-                Thread.sleep(200); // Espera 200ms antes de tentar novamente (ajustável)
-            }
+        // Atribui o carro à fila e semáforo corretos com base no tipo de vaga
+        switch (carro.getTipo()) {
+            case PCD:
+                minhaFila = filaPCD;
+                meuSemaforoEspecifico = semaforoPCD;
+                minhasVagasEspecificas = vagasPCD;
+                break;
+            case IDOSO:
+                minhaFila = filaIdoso;
+                meuSemaforoEspecifico = semaforoIdoso;
+                minhasVagasEspecificas = vagasIdosos;
+                break;
+            case GERAL:
+            default:
+                minhaFila = filaGeral;
+                meuSemaforoEspecifico = semaforoGeral;
+                minhasVagasEspecificas = vagasGerais;
+                break;
         }
 
-        // Fora do loop: verifica o resultado
-        if (vagaEncontrada != null) {
-            // Remove da fila de espera se estava nela
-            synchronized (filaDeEspera) {
-                filaDeEspera.remove(carro);
+        // Sincroniza o acesso à fila de espera para evitar problemas de concorrência
+        synchronized (minhaFila) {
+            // Adiciona o carro à sua fila específica se ainda não estiver lá
+            if (!minhaFila.contains(carro)) {
+                minhaFila.add(carro);
+                guiLogger.logAllEvents("Carro " + carro.getPlaca() + " entrou na fila de espera " + carro.getTipo() + ".");
             }
-            carrosQueEntraram.incrementAndGet();
+
+            // Loop para tentar adquirir uma vaga ou desistir
+            while (vagaEncontrada == null) {
+                long tempoDecorrido = System.currentTimeMillis() - inicioTentativa;
+                long tempoRestante = tempoLimiteEsperaMs - tempoDecorrido;
+
+                // Se o tempo limite de espera foi atingido, o carro desiste.
+                if (tempoRestante <= 0) {
+                    break; // Sai do loop se o tempo limite foi atingido, irá desistir em um if/else no fim da função
+                }
+
+                // Se o carro não é o primeiro da fila, ele deve esperar sua vez.
+                // Isso garante que o carro na frente da fila tem prioridade para tentar.
+                if (minhaFila.peek() != carro) { // se o carro não é o primeiro da fila entra no wait
+                    try {
+                        // O carro "dorme" e espera ser notificado ou por um pequeno timeout
+                        // para reavaliar se é a sua vez ou se o tempo limite foi atingido.
+                        minhaFila.wait(tempoRestante); // Espera sua vez ou até o tempo limite
+                        continue; // Volta para o início do while loop para reavaliar
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                }
+
+                // *** Se o código chegou aqui, significa que minhaFila.peek() == carro ***
+                // É a vez deste carro tentar adquirir uma vaga.
+                boolean adquiriuPermissao = false;
+
+                // 1. Tentar vaga do tipo específico (PCD ou IDOSO)
+                if (carro.getTipo() == TipoVaga.PCD || carro.getTipo() == TipoVaga.IDOSO) {
+                    if (meuSemaforoEspecifico.tryAcquire()) { // Tenta adquirir sem timeout aqui, o wait/notify gerencia a espera
+                        adquiriuPermissao = true;
+                        synchronized (this) { // Sincroniza o acesso à lista de vagas físicas
+                            vagaEncontrada = encontrarEocuparVagaLivre(minhasVagasEspecificas, carro);
+                        }
+                        if (vagaEncontrada == null) { // Permissão adquirida, mas vaga física não encontrada (erro de lógica ou corrida)
+                            meuSemaforoEspecifico.release(); // Libera a permissão se não conseguiu ocupar a vaga física
+                            adquiriuPermissao = false;
+                        }
+                    }
+                }
+
+                // 2. Tentar vaga GERAL
+                // Carros GERAIS só tentam vagas gerais.
+                // Carros PCD/IDOSO tentam vagas gerais SE não conseguiram as específicas.
+                if (vagaEncontrada == null && !adquiriuPermissao) {
+                    if (semaforoGeral.tryAcquire()) {
+                        adquiriuPermissao = true;
+                        synchronized (this) {
+                            vagaEncontrada = encontrarEocuparVagaLivre(vagasGerais, carro);
+                        }
+                        if (vagaEncontrada == null) {
+                            semaforoGeral.release();
+                            adquiriuPermissao = false;
+                        }
+                    }
+                }
+
+                // Se, após todas as tentativas elegíveis, ainda não conseguiu uma vaga
+                if (vagaEncontrada == null && !adquiriuPermissao) {
+                    try {
+                        minhaFila.wait(tempoRestante); // Espera novamente na sua fila
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                }
+            } // Fim do while loop de espera
+
+            // Fora do loop: remove o carro da fila, independentemente de ter conseguido vaga ou desistido.
+            // Isso é feito dentro do bloco sincronizado para evitar problemas de concorrência na fila.
+            minhaFila.remove(carro);
+        } // Fim do synchronized (filaDeEspera)
+
+        // Verifica o resultado final após o loop de espera
+        if (vagaEncontrada != null) {
+            carrosQueEntraram.incrementAndGet(); // Incrementa atomicamente
             return vagaEncontrada; // Carro conseguiu estacionar
         } else {
             guiLogger.logAllEvents("Carro " + carro.getPlaca() + " desistiu de estacionar após " +
                     (System.currentTimeMillis() - inicioTentativa) / 1000.0 + " segundos.");
-            carrosDesistiram.incrementAndGet();
-            synchronized (filaDeEspera) {
-                filaDeEspera.remove(carro); // Remove da fila se desistiu
-            }
+            carrosDesistiram.incrementAndGet(); // Incrementa atomicamente
             return null; // Carro não conseguiu estacionar
         }
     }
+
     /**
      * Método auxiliar para encontrar e ocupar a primeira vaga livre em uma lista.
      * Deve ser chamado APÓS a aquisição de um semáforo para garantir que há "espaço" disponível.
@@ -164,22 +210,43 @@ public class Estacionamento {
             return;
         }
 
+        Carro carroSaindo = vaga.getCarroEstacionado();
+        guiLogger.logAllEvents("Carro " + carroSaindo.getPlaca() + " saindo da vaga " + vaga.getId() + " (" + vaga.getTipoVaga() + ").");
+
         // Libera a vaga física
         vaga.liberar(); // Chama o método da classe Vaga para desocupar
 
         // Libera a permissão no semáforo correspondente
-        if (vagasPCD.contains(vaga)) { // Verifica se a vaga liberada é PCD
+        if (vagasPCD.contains(vaga)) {
             semaforoPCD.release();
-        } else if (vagasIdosos.contains(vaga)) { // Verifica se a vaga liberada é IDOSO
+            // Notifica apenas a fila PCD
+            synchronized (filaPCD) {
+                filaPCD.notifyAll();
+            }
+        } else if (vagasIdosos.contains(vaga)) {
             semaforoIdoso.release();
-        } else if (vagasGerais.contains(vaga)) { // Verifica se a vaga liberada é GERAL
+            // Notifica apenas a fila IDOSO
+            synchronized (filaIdoso) {
+                filaIdoso.notifyAll();
+            }
+        } else if (vagasGerais.contains(vaga)) {
             semaforoGeral.release();
+            // Uma vaga geral liberada pode ser usada por qualquer tipo de carro
+            // Então, notifica todas as filas
+            synchronized (filaGeral) {
+                filaGeral.notifyAll();
+            }
+            synchronized (filaIdoso) {
+                filaIdoso.notifyAll();
+            }
+            synchronized (filaPCD) {
+                filaPCD.notifyAll();
+            }
         } else {
             System.err.println("Erro: Vaga " + vaga.getId() + " não encontrada em nenhuma lista de vagas.");
         }
-        carrosSairam.incrementAndGet(); // Incrementa a estatística
+        carrosSairam.incrementAndGet();
     }
-
 
     public List<Vagas> getVagasGerais() { return vagasGerais; }
     public List<Vagas> getVagasIdosos() { return vagasIdosos; }
@@ -188,9 +255,9 @@ public class Estacionamento {
     public int getCarrosDesistiram() { return carrosDesistiram.get(); }
     public int getCarrosQueEntraram() { return carrosQueEntraram.get(); }
 
-    public Queue<Carro> getFilaDeEspera() {
-        return filaDeEspera;
-    }
+    public Queue<Carro> getFilaGeral() { return filaGeral; }
+    public Queue<Carro> getFilaIdoso() { return filaIdoso; }
+    public Queue<Carro> getFilaPCD() { return filaPCD; }
 
     // Adicionar os getters para os semáforos
     public Semaphore getSemaforoGeral() { return semaforoGeral; }
