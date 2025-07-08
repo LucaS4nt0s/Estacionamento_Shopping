@@ -23,6 +23,7 @@ public class EstacionamentoGUI extends JFrame {
     // Componentes da UI
     private JSpinner txtVagasGerais, txtVagasIdosos, txtVagasPCD;
     private JSpinner txtCarrosGerais, txtCarrosIdosos, txtCarrosPCD;
+    private JCheckBox chkCicloUnico;
     private JButton btnIniciar, btnPararExecucao;
     private JTextArea mainEventsLogArea;
     private JTextArea allEventsLogArea;
@@ -131,6 +132,16 @@ public class EstacionamentoGUI extends JFrame {
         gbc.gridy = 0; // Muda para 5, 0
         txtCarrosPCD = new JSpinner(new SpinnerNumberModel(10, 1, 1000, 1));
         configCarrosPanel.add(txtCarrosPCD, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1; // Nova linha
+        gbc.gridwidth = 6; // Ocupa a linha inteira
+        gbc.anchor = GridBagConstraints.CENTER;
+        chkCicloUnico = new JCheckBox("Executar ciclo único (Carros não retornam após sair)"); // <-- INICIALIZAÇÃO
+        configCarrosPanel.add(chkCicloUnico, gbc);
+
+// Adiciona o painel de configuração de carros ao painel principal de configuração
+        configPanel.add(configCarrosPanel);
 
         // Adiciona o painel de configuração de carros ao painel principal de configuração
         configPanel.add(configCarrosPanel);
@@ -342,6 +353,7 @@ public class EstacionamentoGUI extends JFrame {
             int carrosGerais = (Integer) txtCarrosGerais.getValue();
             int carrosIdosos = (Integer) txtCarrosIdosos.getValue();
             int carrosPCD = (Integer) txtCarrosPCD.getValue();
+            boolean executarCicloUnico = chkCicloUnico.isSelected();
 
             if (carrosGerais < 0 || carrosIdosos < 0 || carrosPCD < 0) {
                 JOptionPane.showMessageDialog(this, "Número de carros não pode ser negativo.", "Erro de Entrada", JOptionPane.ERROR_MESSAGE);
@@ -351,17 +363,17 @@ public class EstacionamentoGUI extends JFrame {
             Random random = new Random();
 
             for (int i = 0; i < carrosGerais; i++) {
-                Carro carro = new Carro("CARRO-" + (i + 1), TipoVaga.GERAL, estacionamento, this);
+                Carro carro = new Carro("CARRO-" + (i + 1), TipoVaga.GERAL, estacionamento, this, executarCicloUnico);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
             for (int i = 0; i < carrosIdosos; i++) {
-                Carro carro = new Carro("IDOSO-" + (i + 1), TipoVaga.IDOSO, estacionamento, this);
+                Carro carro = new Carro("IDOSO-" + (i + 1), TipoVaga.IDOSO, estacionamento, this, executarCicloUnico);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
             for (int i = 0; i < carrosPCD; i++) {
-                Carro carro = new Carro("PCD-" + (i + 1), TipoVaga.PCD, estacionamento, this);
+                Carro carro = new Carro("PCD-" + (i + 1), TipoVaga.PCD, estacionamento, this, executarCicloUnico);
                 executorService.execute(carro);
                 Thread.sleep(random.nextInt(200));
             }
