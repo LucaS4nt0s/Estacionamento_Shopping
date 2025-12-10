@@ -37,6 +37,4 @@ Luca Samuel dos Santos e Maria Eduarda Batista Henrique
 ## 👥 Integrantes do Grupo
 
 - Maria Henrique  
-- [Nome do Integrante 2]  
-- [Nome do Integrante 3]  
-- [Adicione mais se houver]
+- Luca Samuel 
